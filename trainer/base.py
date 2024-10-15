@@ -5,7 +5,6 @@ import torch.nn as nn
 from abc import abstractmethod
 from tensorboardX import SummaryWriter
 
-
 class BaseTrainer(object):
     """Base trainer that provides common training behavior.
         All customized trainer should be subclass of this class.
@@ -18,8 +17,14 @@ class BaseTrainer(object):
         self.clock = TrainClock()
         self.batch_size = cfg.batch_size
 
+        # Determine the device (CPU or GPU)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         # build network
         self.build_net(cfg)
+
+        # Move the network to the appropriate device
+        self.net = self.net.to(self.device)
 
         # set loss function
         self.set_loss_function()
@@ -64,7 +69,7 @@ class BaseTrainer(object):
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, save_path)
 
-        self.net.cuda()
+        self.net.to(self.device)  # Move the model back to the original device
 
     def load_ckpt(self, name=None):
         """load checkpoint from saved checkpoint"""
