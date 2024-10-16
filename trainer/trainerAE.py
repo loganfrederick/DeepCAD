@@ -10,7 +10,10 @@ from cadlib.macro import *
 
 class TrainerAE(BaseTrainer):
     def build_net(self, cfg):
-        self.net = CADTransformer(cfg)
+        if torch.cuda.is_available():
+            self.net = CADTransformer(cfg).cuda()
+        else:
+            self.net = CADTransformer(cfg)
 
     def set_optimizer(self, cfg):
         """set optimizer and lr scheduler used in training"""
@@ -18,11 +21,18 @@ class TrainerAE(BaseTrainer):
         self.scheduler = GradualWarmupScheduler(self.optimizer, 1.0, cfg.warmup_step)
 
     def set_loss_function(self):
-        self.loss_func = CADLoss(self.cfg)
+        if torch.cuda.is_available():
+            self.loss_func = CADLoss(self.cfg).cuda()
+        else:
+            self.loss_func = CADLoss(self.cfg)
 
     def forward(self, data):
-        commands = data['command']
-        args = data['args']
+        if torch.cuda.is_available():
+            commands = data['command'].cuda()
+            args = data['args'].cuda()
+        else:
+            commands = data['command']
+            args = data['args']
 
         outputs = self.net(commands, args)
         loss_dict = self.loss_func(outputs)
@@ -31,8 +41,13 @@ class TrainerAE(BaseTrainer):
 
     def encode(self, data, is_batch=False):
         """encode into latent vectors"""
-        commands = data['command']
-        args = data['args']
+        if torch.cuda.is_available():
+            commands = data['command'].cuda()
+            args = data['args'].cuda()
+        else:
+            commands = data['command']
+            args = data['args']
+            
         if not is_batch:
             commands = commands.unsqueeze(0)
             args = args.unsqueeze(0)

@@ -24,7 +24,10 @@ class BaseTrainer(object):
         self.build_net(cfg)
 
         # Move the network to the appropriate device
-        self.net = self.net.to(self.device)
+        if torch.cuda.is_available():
+            self.net = self.net.cuda()
+        else:
+            self.net = self.net.to(self.device)
 
         # set loss function
         self.set_loss_function()
@@ -69,7 +72,11 @@ class BaseTrainer(object):
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, save_path)
 
-        self.net.to(self.device)  # Move the model back to the original device
+        # Move the model back to the appropriate device
+        if torch.cuda.is_available():
+            self.net.cuda()
+        else:
+            self.net.to(self.device)
 
     def load_ckpt(self, name=None):
         """load checkpoint from saved checkpoint"""
