@@ -10,7 +10,7 @@ from cadlib.macro import *
 
 class TrainerAE(BaseTrainer):
     def build_net(self, cfg):
-        self.net = CADTransformer(cfg).cuda()
+        self.net = CADTransformer(cfg)
 
     def set_optimizer(self, cfg):
         """set optimizer and lr scheduler used in training"""
@@ -18,11 +18,11 @@ class TrainerAE(BaseTrainer):
         self.scheduler = GradualWarmupScheduler(self.optimizer, 1.0, cfg.warmup_step)
 
     def set_loss_function(self):
-        self.loss_func = CADLoss(self.cfg).cuda()
+        self.loss_func = CADLoss(self.cfg)
 
     def forward(self, data):
-        commands = data['command'].cuda() # (N, S)
-        args = data['args'].cuda()  # (N, S, N_ARGS)
+        commands = data['command']
+        args = data['args']
 
         outputs = self.net(commands, args)
         loss_dict = self.loss_func(outputs)
@@ -31,8 +31,8 @@ class TrainerAE(BaseTrainer):
 
     def encode(self, data, is_batch=False):
         """encode into latent vectors"""
-        commands = data['command'].cuda()
-        args = data['args'].cuda()
+        commands = data['command']
+        args = data['args']
         if not is_batch:
             commands = commands.unsqueeze(0)
             args = args.unsqueeze(0)
@@ -102,3 +102,4 @@ class TrainerAE(BaseTrainer):
                                 {"line": line_acc, "arc": arc_acc, "circle": circle_acc,
                                  "plane": sket_plane_acc, "trans": sket_trans_acc, "extent": extent_one_acc},
                                 global_step=self.clock.epoch)
+

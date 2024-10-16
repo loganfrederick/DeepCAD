@@ -9,7 +9,7 @@ from trainer import TrainerAE
 
 def main():
     # create experiment cfg containing all hyperparameters
-    cfg = ConfigAE('train')
+    cfg = ConfigAE('train',custom_args=['--nr_epochs', '500'])
 
     # create network and training agent
     tr_agent = TrainerAE(cfg)
