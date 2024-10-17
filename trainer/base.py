@@ -85,7 +85,7 @@ class BaseTrainer(object):
         if not os.path.exists(load_path):
             raise ValueError("Checkpoint {} not exists.".format(load_path))
 
-        checkpoint = torch.load(load_path)
+        checkpoint = torch.load(load_path, weights_only=True)
         print("Loading checkpoint from {} ...".format(load_path))
         if isinstance(self.net, nn.DataParallel):
             self.net.module.load_state_dict(checkpoint['model_state_dict'])
