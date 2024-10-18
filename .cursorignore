@@ -1,0 +1,9 @@
+data/
+config/__pycache__/
+cadlib/__pycache__/
+dataset/__pycache__/
+model/__pycache__/
+model/layers/__pycache__/
+trainer/__pycache__/
+utils/__pycache__/
+venv/
