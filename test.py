@@ -11,7 +11,11 @@ from cadlib.macro import EOS_IDX
 #from tensorboardX import SummaryWriter
 import gc
 import threading
+import warnings
+from torch.distributed import ReduceOp
 
+# Suppress the specific FutureWarning
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.distributed.reduce_op.*")
 
 def main():
     # create experiment cfg containing all hyperparameters
@@ -44,7 +48,10 @@ def main():
         from tensorboardX.writer import FileWriter
         for obj in gc.get_objects():
             if isinstance(obj, FileWriter):
-                obj.close()
+                try:
+                    obj.close()
+                except Exception as e:
+                    print(f"Error closing FileWriter: {e}")
 
     # Ensure all TensorFlow-related threads are stopped
     for thread in threading.enumerate():
