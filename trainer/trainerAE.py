@@ -6,11 +6,33 @@ from .base import BaseTrainer
 from .loss import CADLoss
 from .scheduler import GradualWarmupScheduler
 from cadlib.macro import *
+from contextlib import contextmanager
 
 
 class TrainerAE(BaseTrainer):
+    def __init__(self, cfg):
+        super().__init__(cfg)  # Call parent's __init__
+        # Additional initialization for TrainerAE
+        print("Initializing TrainerAE")
+        self.writer = None
+        print("TrainerAE initialization complete")
+
+    @contextmanager
+    def create_writer(self):
+        try:
+            from tensorboardX import SummaryWriter
+            self.writer = SummaryWriter(log_dir=self.cfg.tb_dir)
+            yield self.writer
+        finally:
+            if self.writer:
+                self.writer.close()
+                self.writer = None
+
     def build_net(self, cfg):
-        self.net = CADTransformer(cfg).cuda()
+        if torch.cuda.is_available():
+            self.net = CADTransformer(cfg).cuda()
+        else:
+            self.net = CADTransformer(cfg)
 
     def set_optimizer(self, cfg):
         """set optimizer and lr scheduler used in training"""
@@ -18,11 +40,18 @@ class TrainerAE(BaseTrainer):
         self.scheduler = GradualWarmupScheduler(self.optimizer, 1.0, cfg.warmup_step)
 
     def set_loss_function(self):
-        self.loss_func = CADLoss(self.cfg).cuda()
+        if torch.cuda.is_available():
+            self.loss_func = CADLoss(self.cfg).cuda()
+        else:
+            self.loss_func = CADLoss(self.cfg)
 
     def forward(self, data):
-        commands = data['command'].cuda() # (N, S)
-        args = data['args'].cuda()  # (N, S, N_ARGS)
+        if torch.cuda.is_available():
+            commands = data['command'].cuda()
+            args = data['args'].cuda()
+        else:
+            commands = data['command']
+            args = data['args']
 
         outputs = self.net(commands, args)
         loss_dict = self.loss_func(outputs)
@@ -31,8 +60,13 @@ class TrainerAE(BaseTrainer):
 
     def encode(self, data, is_batch=False):
         """encode into latent vectors"""
-        commands = data['command'].cuda()
-        args = data['args'].cuda()
+        if torch.cuda.is_available():
+            commands = data['command'].cuda()
+            args = data['args'].cuda()
+        else:
+            commands = data['command']
+            args = data['args']
+            
         if not is_batch:
             commands = commands.unsqueeze(0)
             args = args.unsqueeze(0)
@@ -49,7 +83,8 @@ class TrainerAE(BaseTrainer):
         out_command = torch.argmax(torch.softmax(outputs['command_logits'], dim=-1), dim=-1)  # (N, S)
         out_args = torch.argmax(torch.softmax(outputs['args_logits'], dim=-1), dim=-1) - 1  # (N, S, N_ARGS)
         if refill_pad: # fill all unused element to -1
-            mask = ~torch.tensor(CMD_ARGS_MASK).bool().cuda()[out_command.long()]
+            cmd_args_mask = torch.tensor(CMD_ARGS_MASK, device=out_command.device)
+            mask = ~cmd_args_mask.bool()[out_command.long()]
             out_args[mask] = -1
 
         out_cad_vec = torch.cat([out_command.unsqueeze(-1), out_args], dim=-1)
@@ -102,3 +137,8 @@ class TrainerAE(BaseTrainer):
                                 {"line": line_acc, "arc": arc_acc, "circle": circle_acc,
                                  "plane": sket_plane_acc, "trans": sket_trans_acc, "extent": extent_one_acc},
                                 global_step=self.clock.epoch)
+
+    def __del__(self):
+        if hasattr(self, 'writer') and self.writer is not None:
+            self.writer.close()
+            self.writer = None

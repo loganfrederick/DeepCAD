@@ -7,13 +7,13 @@ from cadlib.macro import *
 
 
 class ConfigAE(object):
-    def __init__(self, phase):
+    def __init__(self, phase, custom_args=None):
         self.is_train = phase == "train"
 
         self.set_configuration()
 
         # init hyperparameters and parse from command-line
-        parser, args = self.parse()
+        parser, args = self.parse(custom_args)
 
         # set as attributes
         print("----Experiment Configuration-----")
@@ -46,6 +46,9 @@ class ConfigAE(object):
             with open('{}/config.txt'.format(self.exp_dir), 'w') as f:
                 json.dump(args.__dict__, f, indent=2)
 
+        # Add this line to set a default tb_dir
+        self.tb_dir = os.path.join(self.exp_dir, 'tensorboard_logs')
+
     def set_configuration(self):
         self.args_dim = ARGS_DIM # 256
         self.n_args = N_ARGS
@@ -72,7 +75,7 @@ class ConfigAE(object):
             "loss_args_weight": 2.0
         }
 
-    def parse(self):
+    def parse(self, custom_args=None):
         """initiaize argument parser. Define default hyperparameters and collect from command-line arguments."""
         parser = argparse.ArgumentParser()
 
@@ -100,6 +103,10 @@ class ConfigAE(object):
             parser.add_argument('-m', '--mode', type=str, choices=['rec', 'enc', 'dec'])
             parser.add_argument('-o', '--outputs', type=str, default=None)
             parser.add_argument('--z_path', type=str, default=None)
-        
-        args = parser.parse_args()
+
+        print("custom_args: ", custom_args)
+        if custom_args is not None:
+            args = parser.parse_args(custom_args)
+        else:
+            args = parser.parse_args()
         return parser, args

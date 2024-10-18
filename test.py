@@ -8,60 +8,97 @@ import numpy as np
 import os
 import h5py
 from cadlib.macro import EOS_IDX
+#from tensorboardX import SummaryWriter
+import gc
+import threading
+import warnings
+from torch.distributed import ReduceOp
 
+# Suppress the specific FutureWarning
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.distributed.reduce_op.*")
 
 def main():
     # create experiment cfg containing all hyperparameters
     cfg = ConfigAE('test')
 
-    if cfg.mode == 'rec':
-        reconstruct(cfg)
-    elif cfg.mode == 'enc':
-        encode(cfg)
-    elif cfg.mode == 'dec':
-        decode(cfg)
-    else:
-        raise ValueError
+    print(f"Starting execution with mode: {cfg.mode}")
+    tr_agent = None
+    try:
+        if cfg.mode == 'rec':
+            tr_agent = reconstruct(cfg)
+        elif cfg.mode == 'enc':
+            tr_agent = encode(cfg)
+        elif cfg.mode == 'dec':
+            tr_agent = decode(cfg)
+        else:
+            raise ValueError
+        print(f"Finished execution of mode: {cfg.mode}")
+    finally:
+        # Clean up TensorBoardX writer
+        print("Attempting to close TensorBoardX writer")
+        if tr_agent is not None and hasattr(tr_agent, 'writer') and tr_agent.writer is not None:
+            tr_agent.writer.close()
+            tr_agent.writer = None
+        print("TensorBoardX writer closed (if it existed)")
+
+        # Force garbage collection
+        gc.collect()
+
+        # Explicitly close all TensorBoardX file writers
+        from tensorboardX.writer import FileWriter
+        for obj in gc.get_objects():
+            if isinstance(obj, FileWriter):
+                try:
+                    obj.close()
+                except Exception as e:
+                    print(f"Error closing FileWriter: {e}")
+
+    # Ensure all TensorFlow-related threads are stopped
+    for thread in threading.enumerate():
+        if thread.name.startswith('Tensor'):
+            thread._stop()
 
 
 def reconstruct(cfg):
-    # create network and training agent
     tr_agent = TrainerAE(cfg)
+    with tr_agent.create_writer():
+        # load from checkpoint if provided
+        tr_agent.load_ckpt(cfg.ckpt)
+        tr_agent.net.eval()
 
-    # load from checkpoint if provided
-    tr_agent.load_ckpt(cfg.ckpt)
-    tr_agent.net.eval()
+        # create dataloader
+        test_loader = get_dataloader('test', cfg)
+        print("Total number of test data:", len(test_loader))
 
-    # create dataloader
-    test_loader = get_dataloader('test', cfg)
-    print("Total number of test data:", len(test_loader))
+        if cfg.outputs is None:
+            cfg.outputs = "{}/results/test_{}".format(cfg.exp_dir, cfg.ckpt)
+        ensure_dir(cfg.outputs)
 
-    if cfg.outputs is None:
-        cfg.outputs = "{}/results/test_{}".format(cfg.exp_dir, cfg.ckpt)
-    ensure_dir(cfg.outputs)
+        # evaluate
+        pbar = tqdm(test_loader)
+        for i, data in enumerate(pbar):
+            batch_size = data['command'].shape[0]
+            commands = data['command']
+            args = data['args']
+            gt_vec = torch.cat([commands.unsqueeze(-1), args], dim=-1).squeeze(1).detach().cpu().numpy()
+            commands_ = gt_vec[:, :, 0]
+            with torch.no_grad():
+                outputs, _ = tr_agent.forward(data)
+                batch_out_vec = tr_agent.logits2vec(outputs)
 
-    # evaluate
-    pbar = tqdm(test_loader)
-    for i, data in enumerate(pbar):
-        batch_size = data['command'].shape[0]
-        commands = data['command']
-        args = data['args']
-        gt_vec = torch.cat([commands.unsqueeze(-1), args], dim=-1).squeeze(1).detach().cpu().numpy()
-        commands_ = gt_vec[:, :, 0]
-        with torch.no_grad():
-            outputs, _ = tr_agent.forward(data)
-            batch_out_vec = tr_agent.logits2vec(outputs)
+            for j in range(batch_size):
+                out_vec = batch_out_vec[j]
+                seq_len = commands_[j].tolist().index(EOS_IDX)
 
-        for j in range(batch_size):
-            out_vec = batch_out_vec[j]
-            seq_len = commands_[j].tolist().index(EOS_IDX)
+                data_id = data["id"][j].split('/')[-1]
 
-            data_id = data["id"][j].split('/')[-1]
+                save_path = os.path.join(cfg.outputs, '{}_vec.h5'.format(data_id))
+                with h5py.File(save_path, 'w') as fp:
+                    fp.create_dataset('out_vec', data=out_vec[:seq_len], dtype=np.int32)
+                    fp.create_dataset('gt_vec', data=gt_vec[j][:seq_len], dtype=np.int32)
 
-            save_path = os.path.join(cfg.outputs, '{}_vec.h5'.format(data_id))
-            with h5py.File(save_path, 'w') as fp:
-                fp.create_dataset('out_vec', data=out_vec[:seq_len], dtype=np.int)
-                fp.create_dataset('gt_vec', data=gt_vec[j][:seq_len], dtype=np.int)
+    print("Finished reconstruct function")
+    return tr_agent
 
 
 def encode(cfg):
@@ -123,7 +160,7 @@ def decode(cfg):
 
             save_path = os.path.join(save_dir, '{}.h5'.format(i + j))
             with h5py.File(save_path, 'w') as fp:
-                fp.create_dataset('out_vec', data=out_vec[:seq_len], dtype=np.int)
+                fp.create_dataset('out_vec', data=out_vec[:seq_len], dtype=np.int32)
 
 
 if __name__ == '__main__':
