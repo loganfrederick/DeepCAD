@@ -46,6 +46,9 @@ class ConfigAE(object):
             with open('{}/config.txt'.format(self.exp_dir), 'w') as f:
                 json.dump(args.__dict__, f, indent=2)
 
+        # Add this line to set a default tb_dir
+        self.tb_dir = os.path.join(self.exp_dir, 'tensorboard_logs')
+
     def set_configuration(self):
         self.args_dim = ARGS_DIM # 256
         self.n_args = N_ARGS

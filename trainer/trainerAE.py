@@ -6,9 +6,28 @@ from .base import BaseTrainer
 from .loss import CADLoss
 from .scheduler import GradualWarmupScheduler
 from cadlib.macro import *
+from contextlib import contextmanager
 
 
 class TrainerAE(BaseTrainer):
+    def __init__(self, cfg):
+        super().__init__(cfg)  # Call parent's __init__
+        # Additional initialization for TrainerAE
+        print("Initializing TrainerAE")
+        self.writer = None
+        print("TrainerAE initialization complete")
+
+    @contextmanager
+    def create_writer(self):
+        try:
+            from tensorboardX import SummaryWriter
+            self.writer = SummaryWriter(log_dir=self.cfg.tb_dir)
+            yield self.writer
+        finally:
+            if self.writer:
+                self.writer.close()
+                self.writer = None
+
     def build_net(self, cfg):
         if torch.cuda.is_available():
             self.net = CADTransformer(cfg).cuda()
@@ -119,3 +138,7 @@ class TrainerAE(BaseTrainer):
                                  "plane": sket_plane_acc, "trans": sket_trans_acc, "extent": extent_one_acc},
                                 global_step=self.clock.epoch)
 
+    def __del__(self):
+        if hasattr(self, 'writer') and self.writer is not None:
+            self.writer.close()
+            self.writer = None
