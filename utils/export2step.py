@@ -4,10 +4,12 @@ import json
 import h5py
 import numpy as np
 from OCC.Core.BRepCheck import BRepCheck_Analyzer
-from OCC.Extend.DataExchange import read_step_file, write_step_file
+from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
 import argparse
 import sys
-sys.path.append("..")
+from OCC.Core.IFSelect import IFSelect_RetDone
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cadlib.extrude import CADSequence
 from cadlib.visualize import vec2CADsolid, create_CAD
 from file_utils import ensure_dir
@@ -29,13 +31,16 @@ if args.num != -1:
     out_paths = out_paths[args.idx:args.idx+args.num]
 save_dir = args.src + "_step" if args.outputs is None else args.outputs
 ensure_dir(save_dir)
+print(f"Output directory: {os.path.abspath(save_dir)}")
+
+print(f"Files to process: {out_paths}")
 
 for path in out_paths:
-    print(path)
+    print(f"Processing: {os.path.abspath(path)}")
     try:
         if args.form == "h5":
             with h5py.File(path, 'r') as fp:
-                out_vec = fp["out_vec"][:].astype(np.float)
+                out_vec = fp["out_vec"][:].astype(float)
                 out_shape = vec2CADsolid(out_vec)
         else:
             with open(path, 'r') as fp:
@@ -44,17 +49,32 @@ for path in out_paths:
             cad_seq.normalize()
             out_shape = create_CAD(cad_seq)
 
-    except Exception as e:
-        print("load and create failed.")
-        continue
-    
-    if args.filter:
-        analyzer = BRepCheck_Analyzer(out_shape)
-        if not analyzer.IsValid():
-            print("detect invalid.")
-            continue
-    
-    name = path.split("/")[-1].split(".")[0]
-    save_path = os.path.join(save_dir, name + ".step")
-    write_step_file(out_shape, save_path)
+        print(f"out_shape created: {out_shape is not None}")
 
+        if args.filter:
+            analyzer = BRepCheck_Analyzer(out_shape)
+            if not analyzer.IsValid():
+                print("Detected invalid model.")
+                continue
+        
+        name = path.split("/")[-1].split(".")[0]
+        save_path = os.path.join(save_dir, name + ".step")
+        print(f"Attempting to save to: {os.path.abspath(save_path)}")
+        
+        writer = STEPControl_Writer()
+        transfer_status = writer.Transfer(out_shape, STEPControl_AsIs)
+        if transfer_status != IFSelect_RetDone:
+            print(f"Failed to transfer shape for {save_path}")
+            continue
+        
+        write_status = writer.Write(save_path)
+        if write_status == IFSelect_RetDone:
+            print(f"Successfully wrote: {save_path}")
+        else:
+            print(f"Failed to write {save_path}")
+
+    except Exception as e:
+        print(f"Error processing {path}: {str(e)}")
+        continue
+
+print(f"Processing complete. Check {save_dir} for output files.")
